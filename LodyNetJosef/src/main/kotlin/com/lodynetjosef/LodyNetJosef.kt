@@ -1,6 +1,5 @@
 package com.lodynetjosef
 
-import com.lagradost.cloudstream3.ActorData
 import com.lagradost.cloudstream3.HomePageResponse
 import com.lagradost.cloudstream3.LoadResponse
 import com.lagradost.cloudstream3.MainAPI
@@ -16,8 +15,6 @@ import com.lagradost.cloudstream3.newMovieLoadResponse
 import com.lagradost.cloudstream3.newMovieSearchResponse
 import com.lagradost.cloudstream3.newTvSeriesLoadResponse
 import com.lagradost.cloudstream3.utils.ExtractorLink
-import com.lagradost.cloudstream3.utils.ExtractorLinkType
-import com.lagradost.cloudstream3.utils.Qualities
 import com.lagradost.cloudstream3.utils.loadExtractor
 import org.jsoup.nodes.Element
 import java.net.URLEncoder
@@ -120,7 +117,6 @@ class LodyNetJosef : MainAPI() {
             ?.toIntOrNull()
 
         val tags = doc.select("a.GenresDetails").map { it.text().trim() }.filter { it.isNotBlank() }
-        val actors = doc.select("a.ActorsDetails").map { it.text().trim() }.filter { it.isNotBlank() }
 
         val recommendations = doc.select(".ItemNewly")
             .mapNotNull { it.toSearchResult() }
@@ -145,7 +141,6 @@ class LodyNetJosef : MainAPI() {
                 this.plot = description
                 this.year = year
                 this.tags = tags
-                this.actors = actors.map { ActorData(it) }
                 this.recommendations = recommendations
             }
         }
@@ -155,7 +150,6 @@ class LodyNetJosef : MainAPI() {
             this.plot = description
             this.year = year
             this.tags = tags
-            this.actors = actors.map { ActorData(it) }
             this.recommendations = recommendations
         }
     }
@@ -197,9 +191,7 @@ class LodyNetJosef : MainAPI() {
 
         val buttons = doc.select("#AllServerWatch button")
         buttons.forEach { button ->
-            val serverName = button.text().trim().ifBlank { "Server" }
             val onclick = button.attr("onclick")
-
             val match = Regex("""SwitchServer\(this,\s*(\d+),\s*(\d+)\)""").find(onclick)
                 ?: return@forEach
 
@@ -223,17 +215,6 @@ class LodyNetJosef : MainAPI() {
                         loadExtractor(embedResponse, data, subtitleCallback, callback)
                         found = true
                     } catch (_: Exception) {
-                        callback.invoke(
-                            ExtractorLink(
-                                source = name,
-                                name = "$name - $serverName",
-                                url = embedResponse,
-                                referer = data,
-                                quality = Qualities.Unknown.value,
-                                type = ExtractorLinkType.VIDEO
-                            )
-                        )
-                        found = true
                     }
                 }
             } catch (_: Exception) {
