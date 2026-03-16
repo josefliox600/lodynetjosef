@@ -2,6 +2,7 @@ import com.android.build.gradle.BaseExtension
 import com.lagradost.cloudstream3.gradle.CloudstreamExtension
 import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 import org.jetbrains.kotlin.gradle.tasks.KotlinJvmCompile
+import java.io.File
 
 buildscript {
     repositories {
@@ -12,7 +13,7 @@ buildscript {
     dependencies {
         classpath("com.android.tools.build:gradle:8.7.3")
         classpath("com.github.recloudstream:gradle:-SNAPSHOT")
-        classpath("org.jetbrains.kotlin:kotlin-gradle-plugin:2.3.20")
+        classpath("org.jetbrains.kotlin:kotlin-gradle-plugin:2.1.0")
     }
 }
 
@@ -24,16 +25,22 @@ allprojects {
     }
 }
 
+fun Project.cloudstream(configuration: CloudstreamExtension.() -> Unit) =
+    extensions.getByName<CloudstreamExtension>("cloudstream").configuration()
+
+fun Project.android(configuration: BaseExtension.() -> Unit) =
+    extensions.getByName<BaseExtension>("android").configuration()
+
 subprojects {
     apply(plugin = "com.android.library")
     apply(plugin = "kotlin-android")
     apply(plugin = "com.lagradost.cloudstream3.gradle")
 
-    extensions.configure<CloudstreamExtension>("cloudstream") {
+    cloudstream {
         setRepo(System.getenv("GITHUB_REPOSITORY") ?: "josefliox600/lodynetjosef")
     }
 
-    extensions.configure<BaseExtension>("android") {
+    android {
         compileSdkVersion(35)
 
         defaultConfig {
@@ -67,6 +74,6 @@ subprojects {
     }
 }
 
-tasks.register("clean", Delete::class) {
+tasks.register<Delete>("clean") {
     delete(rootProject.layout.buildDirectory)
 }
