@@ -1,7 +1,5 @@
 package com.hdtodayzjosef
 
-import com.fasterxml.jackson.module.kotlin.jacksonObjectMapper
-import com.fasterxml.jackson.module.kotlin.readValue
 import com.lagradost.cloudstream3.*
 import com.lagradost.cloudstream3.utils.*
 import org.jsoup.nodes.Element
@@ -16,8 +14,6 @@ class HDTodayZJosef : MainAPI() {
         TvType.Movie,
         TvType.TvSeries
     )
-
-    private val mapper = jacksonObjectMapper()
 
     override val mainPage = mainPageOf(
         "$mainUrl/home" to "Home",
@@ -41,8 +37,7 @@ class HDTodayZJosef : MainAPI() {
             ?.attr("data-src")
             ?.ifBlank { this.selectFirst("img.film-poster-img, img")?.attr("src") }
 
-        val isTv = href.contains("/tv/")
-        return if (isTv) {
+        return if (href.contains("/tv/")) {
             newTvSeriesSearchResponse(title, href, TvType.TvSeries) {
                 this.posterUrl = poster
             }
@@ -55,6 +50,7 @@ class HDTodayZJosef : MainAPI() {
 
     override suspend fun getMainPage(page: Int, request: MainPageRequest): HomePageResponse {
         val doc = app.get(request.data).document
+
         val items = doc.select(
             ".film_list-wrap .flw-item, .film_list .flw-item, .block_area-content .flw-item"
         ).mapNotNull { it.toSearchResponse() }
@@ -64,6 +60,7 @@ class HDTodayZJosef : MainAPI() {
 
     override suspend fun search(query: String): List<SearchResponse> {
         val doc = app.get("$mainUrl/search/$query").document
+
         return doc.select(
             ".film_list-wrap .flw-item, .film_list .flw-item, .block_area-content .flw-item"
         ).mapNotNull { it.toSearchResponse() }
@@ -84,9 +81,11 @@ class HDTodayZJosef : MainAPI() {
 
         val title = doc.selectFirst("h1")?.text()?.trim() ?: return null
         val poster = doc.selectFirst(".dp-i-c-poster img")?.attr("src")
+            ?: doc.selectFirst(".film-poster-img")?.attr("src")
         val description = doc.selectFirst(".description")?.text()?.trim()
 
         val rows = doc.select(".elements .row-line")
+
         val releasedText = rows.find { it.text().contains("Released:", true) }?.text()
         val durationText = rows.find { it.text().contains("Duration:", true) }?.text()
         val genreRow = rows.find { it.text().contains("Genre:", true) }
@@ -95,19 +94,26 @@ class HDTodayZJosef : MainAPI() {
         val duration = parseDurationMinutes(durationText)
         val tags = genreRow?.select("a")?.map { it.text().trim() } ?: emptyList()
 
-        val serverIds = doc.select(".detail_page-servers .link-item")
-            .mapNotNull { it.attr("data-id").takeIf { id -> id.isNotBlank() } }
-            .distinct()
+        val serverLinks = doc.select(".detail_page-servers .link-item")
+        val watchLink = doc.select("a[href*=\"/watch-movie/\"], a[href*=\"/watch-tv/\"]")
+            .mapNotNull { it.attr("href") }
+            .firstOrNull { it.contains("/watch-") }
+            ?.let { fixUrl(it) }
 
-        if (serverIds.isEmpty()) return null
-
-        val serversJson = mapper.writeValueAsString(serverIds)
-        val isTv = url.contains("/tv/") || url.contains("/watch-tv/")
+        val isTv = url.contains("/tv/") || watchLink?.contains("/watch-tv/") == true
 
         return if (isTv) {
             val episodes = mutableListOf<Episode>()
+
+            val firstServerId = serverLinks.firstOrNull()?.attr("data-id")?.trim()
+            val episodeData = when {
+                !watchLink.isNullOrBlank() && !firstServerId.isNullOrBlank() -> "$watchLink.$firstServerId"
+                !watchLink.isNullOrBlank() -> watchLink
+                else -> url
+            }
+
             episodes.add(
-                newEpisode(serversJson) {
+                newEpisode(episodeData) {
                     name = "Episode 1"
                     episode = 1
                 }
@@ -120,7 +126,15 @@ class HDTodayZJosef : MainAPI() {
                 this.tags = tags
             }
         } else {
-            newMovieLoadResponse(title, url, TvType.Movie, serversJson) {
+            val firstServerId = serverLinks.firstOrNull()?.attr("data-id")?.trim()
+
+            val dataUrl = when {
+                !watchLink.isNullOrBlank() && !firstServerId.isNullOrBlank() -> "$watchLink.$firstServerId"
+                !watchLink.isNullOrBlank() -> watchLink
+                else -> url
+            }
+
+            newMovieLoadResponse(title, url, TvType.Movie, dataUrl) {
                 this.posterUrl = poster
                 this.plot = description
                 this.year = year
@@ -136,38 +150,38 @@ class HDTodayZJosef : MainAPI() {
         subtitleCallback: (SubtitleFile) -> Unit,
         callback: (ExtractorLink) -> Unit
     ): Boolean {
-        val serverIds = try {
-            mapper.readValue<List<String>>(data)
-        } catch (_: Exception) {
-            emptyList()
-        }
+        val episodeId = data.substringAfterLast(".").substringBefore("?").trim()
+        if (episodeId.isBlank()) return false
 
-        if (serverIds.isEmpty()) return false
+        val sourceUrl = "$mainUrl/ajax/episode/sources/$episodeId"
 
-        var found = false
+        val response = app.get(
+            sourceUrl,
+            referer = data,
+            headers = mapOf(
+                "X-Requested-With" to "XMLHttpRequest",
+                "Accept" to "application/json, text/javascript, */*; q=0.01"
+            )
+        ).text.trim()
 
-        serverIds.forEach { serverId ->
+        if (response.isBlank()) return false
+
+        val iframeLink =
             try {
-                val response = app.get(
-                    "$mainUrl/ajax/episode/sources/$serverId",
-                    referer = mainUrl,
-                    headers = mapOf("X-Requested-With" to "XMLHttpRequest")
-                ).text
-
-                val iframeLink = Regex("""["']link["']\s*:\s*["']([^"']+)["']""")
+                mapper.readTree(response).get("link")?.asText()
+            } catch (_: Exception) {
+                null
+            }
+                ?: Regex("""["']link["']\s*:\s*["']([^"']+)["']""")
                     .find(response)
                     ?.groupValues?.get(1)
-                    ?.replace("\\/", "/")
-                    ?.trim()
+                ?: Regex("""https?:\/\/[^"'\\s]+""")
+                    .find(response)
+                    ?.value
 
-                if (!iframeLink.isNullOrBlank()) {
-                    loadExtractor(iframeLink, mainUrl, subtitleCallback, callback)
-                    found = true
-                }
-            } catch (_: Exception) {
-            }
-        }
+        if (iframeLink.isNullOrBlank()) return false
 
-        return found
+        loadExtractor(iframeLink, data, subtitleCallback, callback)
+        return true
     }
 }
