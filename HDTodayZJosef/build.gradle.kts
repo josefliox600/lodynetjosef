@@ -1,5 +1,9 @@
 version = 1
 
+android {
+    namespace = "com.hdtodayzjosef"
+}
+
 cloudstream {
     language = "en"
     authors = listOf("Josef")
