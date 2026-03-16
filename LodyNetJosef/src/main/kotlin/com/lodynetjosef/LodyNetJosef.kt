@@ -1,6 +1,7 @@
 package com.lodynetjosef
 
-import com.lagradost.cloudstream3.Actor
+import com.lagradost.cloudstream3.ActorData
+import com.lagradost.cloudstream3.ExtractorLink
 import com.lagradost.cloudstream3.HomePageResponse
 import com.lagradost.cloudstream3.LoadResponse
 import com.lagradost.cloudstream3.MainAPI
@@ -9,17 +10,15 @@ import com.lagradost.cloudstream3.SearchResponse
 import com.lagradost.cloudstream3.SubtitleFile
 import com.lagradost.cloudstream3.TvType
 import com.lagradost.cloudstream3.app
+import com.lagradost.cloudstream3.mainPageOf
 import com.lagradost.cloudstream3.newEpisode
-import com.lagradost.cloudstream3.newExtractorLink
 import com.lagradost.cloudstream3.newHomePageResponse
 import com.lagradost.cloudstream3.newMovieLoadResponse
 import com.lagradost.cloudstream3.newMovieSearchResponse
 import com.lagradost.cloudstream3.newTvSeriesLoadResponse
-import com.lagradost.cloudstream3.utils.ExtractorLink
 import com.lagradost.cloudstream3.utils.ExtractorLinkType
 import com.lagradost.cloudstream3.utils.Qualities
 import com.lagradost.cloudstream3.utils.loadExtractor
-import com.lagradost.cloudstream3.mainPageOf
 import org.jsoup.nodes.Element
 import java.net.URLEncoder
 
@@ -67,9 +66,9 @@ class LodyNetJosef : MainAPI() {
             ?: return null
 
         val poster = selectFirst(".NewlyCover, .SuggestionsCover, [data-src], img")
-            ?.let { el ->
-                el.attr("data-src").ifBlank { el.attr("src") }
-            }?.trim()?.ifBlank { null }
+            ?.let { el -> el.attr("data-src").ifBlank { el.attr("src") } }
+            ?.trim()
+            ?.ifBlank { null }
 
         val type = detectType(title, href)
 
@@ -146,7 +145,7 @@ class LodyNetJosef : MainAPI() {
                 this.plot = description
                 this.year = year
                 this.tags = tags
-                this.actors = actors.map { Actor(it) }
+                this.actors = actors.map { ActorData(it) }
                 this.recommendations = recommendations
             }
         }
@@ -156,7 +155,7 @@ class LodyNetJosef : MainAPI() {
             this.plot = description
             this.year = year
             this.tags = tags
-            this.actors = actors.map { Actor(it) }
+            this.actors = actors.map { ActorData(it) }
             this.recommendations = recommendations
         }
     }
@@ -225,15 +224,14 @@ class LodyNetJosef : MainAPI() {
                         found = true
                     } catch (_: Exception) {
                         callback.invoke(
-                            newExtractorLink(
-                                name,
-                                "$name - $serverName",
-                                embedResponse,
-                                ExtractorLinkType.VIDEO
-                            ) {
-                                referer = data
-                                quality = Qualities.Unknown.value
-                            }
+                            ExtractorLink(
+                                source = name,
+                                name = "$name - $serverName",
+                                url = embedResponse,
+                                referer = data,
+                                quality = Qualities.Unknown.value,
+                                type = ExtractorLinkType.VIDEO
+                            )
                         )
                         found = true
                     }
