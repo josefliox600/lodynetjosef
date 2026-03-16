@@ -1,5 +1,9 @@
 version = 1
 
+android {
+    namespace = "com.lodynetjosef"
+}
+
 cloudstream {
     description = "Arabic content from LodyNet"
     authors = listOf("Josef")
