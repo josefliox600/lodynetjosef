@@ -1,5 +1,7 @@
 package com.hdtodayzjosef
 
+import com.fasterxml.jackson.module.kotlin.jacksonObjectMapper
+import com.fasterxml.jackson.module.kotlin.readValue
 import com.lagradost.cloudstream3.*
 import com.lagradost.cloudstream3.utils.*
 import org.jsoup.nodes.Element
@@ -14,6 +16,8 @@ class HDTodayZJosef : MainAPI() {
         TvType.Movie,
         TvType.TvSeries
     )
+
+    private val mapper = jacksonObjectMapper()
 
     override val mainPage = mainPageOf(
         "$mainUrl/home" to "Home",
@@ -96,25 +100,25 @@ class HDTodayZJosef : MainAPI() {
 
         val tags = genreRow?.select("a")?.map { it.text().trim() } ?: emptyList()
 
-        val serverLinks = doc.select(".detail_page-servers .link-item")
-        val watchLink = doc.select("a[href*=\"/watch-movie/\"], a[href*=\"/watch-tv/\"]")
-            .mapNotNull { it.attr("href") }
-            .firstOrNull { it.contains("/watch-") }
-            ?.let { fixUrl(it) }
+        val serverIds = doc.select(".detail_page-servers .link-item")
+            .mapNotNull { it.attr("data-id").takeIf { id -> id.isNotBlank() } }
+            .distinct()
 
-        val isTv = url.contains("/tv/") || watchLink?.contains("/watch-tv/") == true
+        if (serverIds.isEmpty()) return null
+
+        val serversJson = mapper.writeValueAsString(serverIds)
+
+        val isTv = url.contains("/tv/") || url.contains("/watch-tv/")
 
         return if (isTv) {
             val episodes = mutableListOf<Episode>()
 
-            if (!watchLink.isNullOrBlank()) {
-                episodes.add(
-                    newEpisode(watchLink) {
-                        name = "Episode 1"
-                        episode = 1
-                    }
-                )
-            }
+            episodes.add(
+                newEpisode(serversJson) {
+                    name = "Episode 1"
+                    episode = 1
+                }
+            )
 
             newTvSeriesLoadResponse(title, url, TvType.TvSeries, episodes) {
                 this.posterUrl = poster
@@ -123,21 +127,7 @@ class HDTodayZJosef : MainAPI() {
                 this.tags = tags
             }
         } else {
-            val firstServerId = serverLinks.firstOrNull()?.attr("data-id")
-            val dataUrl = when {
-                !watchLink.isNullOrBlank() && !firstServerId.isNullOrBlank() && !watchLink.contains(".") ->
-                    "$watchLink.$firstServerId"
-
-                !watchLink.isNullOrBlank() ->
-                    watchLink
-
-                !firstServerId.isNullOrBlank() ->
-                    url.replace("/movie/", "/watch-movie/") + ".$firstServerId"
-
-                else -> url
-            }
-
-            newMovieLoadResponse(title, url, TvType.Movie, dataUrl) {
+            newMovieLoadResponse(title, url, TvType.Movie, serversJson) {
                 this.posterUrl = poster
                 this.plot = description
                 this.year = year
@@ -153,23 +143,49 @@ class HDTodayZJosef : MainAPI() {
         subtitleCallback: (SubtitleFile) -> Unit,
         callback: (ExtractorLink) -> Unit
     ): Boolean {
-        val episodeId = data.substringAfterLast(".").substringBefore("?").trim()
-        if (episodeId.isBlank()) return false
+        val serverIds = try {
+            mapper.readValue<List<String>>(data)
+        } catch (_: Exception) {
+            emptyList()
+        }
 
-        val response = app.get(
-            "$mainUrl/ajax/episode/sources/$episodeId",
-            referer = data,
-            headers = mapOf("X-Requested-With" to "XMLHttpRequest")
-        ).text
+        if (serverIds.isEmpty()) return false
 
-        val iframeLink = Regex("""["']link["']\s*:\s*["']([^"']+)["']""")
-            .find(response)
-            ?.groupValues?.get(1)
-            ?.trim()
+        var found = false
 
-        if (iframeLink.isNullOrBlank()) return false
+        serverIds.forEach { serverId ->
+            try {
+                val response = app.get(
+                    "$mainUrl/ajax/episode/sources/$serverId",
+                    referer = mainUrl,
+                    headers = mapOf("X-Requested-With" to "XMLHttpRequest")
+                ).text
 
-        loadExtractor(iframeLink, data, subtitleCallback, callback)
-        return true
+                val iframeLink = Regex("""["']link["']\s*:\s*["']([^"']+)["']""")
+                    .find(response)
+                    ?.groupValues?.get(1)
+                    ?.replace("\\/", "/")
+                    ?.trim()
+
+                if (!iframeLink.isNullOrBlank()) {
+                    loadExtractor(iframeLink, mainUrl, subtitleCallback, callback)
+                    found = true
+                } else {
+                    val iframeFromHtml = Regex("""<iframe[^>]+src=["']([^"']+)["']""")
+                        .find(response)
+                        ?.groupValues?.get(1)
+                        ?.replace("\\/", "/")
+                        ?.trim()
+
+                    if (!iframeFromHtml.isNullOrBlank()) {
+                        loadExtractor(fixUrl(iframeFromHtml), mainUrl, subtitleCallback, callback)
+                        found = true
+                    }
+                }
+            } catch (_: Exception) {
+            }
+        }
+
+        return found
     }
 }
