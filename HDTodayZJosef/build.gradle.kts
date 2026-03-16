@@ -1,8 +1,4 @@
-version = 2
-
-android {
-    namespace = "com.hdtodayzjosef"
-}
+version = 1
 
 cloudstream {
     language = "en"
@@ -10,4 +6,8 @@ cloudstream {
     status = 1
     tvTypes = listOf("Movie", "TvSeries")
     iconUrl = "https://www.google.com/s2/favicons?domain=hdtodayz.to&sz=%size%"
+}
+
+android {
+    namespace = "com.hdtodayzjosef"
 }
