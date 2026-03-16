@@ -1,0 +1,43 @@
+[
+  {
+    "iconUrl": "https://www.google.com/s2/favicons?domain=hdtodayz.to&sz=%size%",
+    "apiVersion": 1,
+    "repositoryUrl": "https://github.com/josefliox600/lodynetjosef",
+    "fileSize": 13926,
+    "status": 1,
+    "language": "en",
+    "authors": [
+      "Josef"
+    ],
+    "tvTypes": [
+      "Movie",
+      "TvSeries"
+    ],
+    "version": 2,
+    "internalName": "HDTodayZJosef",
+    "url": "https://raw.githubusercontent.com/josefliox600/lodynetjosef/builds/HDTodayZJosef-v2.cs3",
+    "name": "HDTodayZJosef"
+  },
+  {
+    "iconUrl": "https://www.google.com/s2/favicons?domain=lodynet.watch&sz=%size%",
+    "apiVersion": 1,
+    "repositoryUrl": "https://github.com/josefliox600/lodynetjosef",
+    "fileSize": 17293,
+    "status": 1,
+    "language": "ar",
+    "authors": [
+      "Josef"
+    ],
+    "tvTypes": [
+      "Movie",
+      "TvSeries",
+      "AsianDrama",
+      "Anime"
+    ],
+    "version": 1,
+    "internalName": "LodyNetJosef",
+    "description": "Arabic content from LodyNet",
+    "url": "https://raw.githubusercontent.com/josefliox600/lodynetjosef/builds/LodyNetJosef-v1.cs3",
+    "name": "LodyNetJosef"
+  }
+]

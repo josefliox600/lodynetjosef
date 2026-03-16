@@ -1,0 +1,8 @@
+{
+  "name": "LodyNet Josef Repo",
+  "description": "Arabic LodyNet provider for Cloudstream",
+  "manifestVersion": 1,
+  "pluginLists": [
+    "https://raw.githubusercontent.com/josefliox600/lodynetjosef/builds/plugins-b76f5bbe.json"
+  ]
+}
