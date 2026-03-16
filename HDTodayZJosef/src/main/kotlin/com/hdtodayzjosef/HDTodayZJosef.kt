@@ -39,9 +39,7 @@ class HDTodayZJosef : MainAPI() {
 
         val poster = this.selectFirst("img.film-poster-img, img")
             ?.attr("data-src")
-            ?.ifBlank {
-                this.selectFirst("img.film-poster-img, img")?.attr("src")
-            }
+            ?.ifBlank { this.selectFirst("img.film-poster-img, img")?.attr("src") }
 
         val isTv = href.contains("/tv/")
         return if (isTv) {
@@ -57,7 +55,6 @@ class HDTodayZJosef : MainAPI() {
 
     override suspend fun getMainPage(page: Int, request: MainPageRequest): HomePageResponse {
         val doc = app.get(request.data).document
-
         val items = doc.select(
             ".film_list-wrap .flw-item, .film_list .flw-item, .block_area-content .flw-item"
         ).mapNotNull { it.toSearchResponse() }
@@ -67,7 +64,6 @@ class HDTodayZJosef : MainAPI() {
 
     override suspend fun search(query: String): List<SearchResponse> {
         val doc = app.get("$mainUrl/search/$query").document
-
         return doc.select(
             ".film_list-wrap .flw-item, .film_list .flw-item, .block_area-content .flw-item"
         ).mapNotNull { it.toSearchResponse() }
@@ -91,13 +87,12 @@ class HDTodayZJosef : MainAPI() {
         val description = doc.selectFirst(".description")?.text()?.trim()
 
         val rows = doc.select(".elements .row-line")
-
         val releasedText = rows.find { it.text().contains("Released:", true) }?.text()
         val durationText = rows.find { it.text().contains("Duration:", true) }?.text()
         val genreRow = rows.find { it.text().contains("Genre:", true) }
+
         val year = parseYear(releasedText)
         val duration = parseDurationMinutes(durationText)
-
         val tags = genreRow?.select("a")?.map { it.text().trim() } ?: emptyList()
 
         val serverIds = doc.select(".detail_page-servers .link-item")
@@ -107,12 +102,10 @@ class HDTodayZJosef : MainAPI() {
         if (serverIds.isEmpty()) return null
 
         val serversJson = mapper.writeValueAsString(serverIds)
-
         val isTv = url.contains("/tv/") || url.contains("/watch-tv/")
 
         return if (isTv) {
             val episodes = mutableListOf<Episode>()
-
             episodes.add(
                 newEpisode(serversJson) {
                     name = "Episode 1"
@@ -170,17 +163,6 @@ class HDTodayZJosef : MainAPI() {
                 if (!iframeLink.isNullOrBlank()) {
                     loadExtractor(iframeLink, mainUrl, subtitleCallback, callback)
                     found = true
-                } else {
-                    val iframeFromHtml = Regex("""<iframe[^>]+src=["']([^"']+)["']""")
-                        .find(response)
-                        ?.groupValues?.get(1)
-                        ?.replace("\\/", "/")
-                        ?.trim()
-
-                    if (!iframeFromHtml.isNullOrBlank()) {
-                        loadExtractor(fixUrl(iframeFromHtml), mainUrl, subtitleCallback, callback)
-                        found = true
-                    }
                 }
             } catch (_: Exception) {
             }
