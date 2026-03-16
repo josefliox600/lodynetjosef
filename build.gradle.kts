@@ -1,7 +1,7 @@
-import com.lagradost.cloudstream3.gradle.CloudstreamExtension
 import com.android.build.gradle.BaseExtension
+import com.lagradost.cloudstream3.gradle.CloudstreamExtension
 import org.jetbrains.kotlin.gradle.dsl.JvmTarget
-import org.jetbrains.kotlin.gradle.tasks.KotlinCompile
+import org.jetbrains.kotlin.gradle.tasks.KotlinJvmCompile
 
 buildscript {
     repositories {
@@ -9,11 +9,10 @@ buildscript {
         mavenCentral()
         maven("https://jitpack.io")
     }
-
     dependencies {
         classpath("com.android.tools.build:gradle:8.7.3")
         classpath("com.github.recloudstream:gradle:-SNAPSHOT")
-        classpath("org.jetbrains.kotlin:kotlin-gradle-plugin:2.3.0")
+        classpath("org.jetbrains.kotlin:kotlin-gradle-plugin:2.1.0")
     }
 }
 
@@ -26,10 +25,10 @@ allprojects {
 }
 
 fun Project.cloudstream(configuration: CloudstreamExtension.() -> Unit) =
-    extensions.getByName<CloudstreamExtension>("cloudstream").configuration()
+    extensions.getByName("cloudstream").configuration()
 
 fun Project.android(configuration: BaseExtension.() -> Unit) =
-    extensions.getByName<BaseExtension>("android").configuration()
+    extensions.getByName("android").configuration()
 
 subprojects {
     apply(plugin = "com.android.library")
@@ -37,49 +36,46 @@ subprojects {
     apply(plugin = "com.lagradost.cloudstream3.gradle")
 
     cloudstream {
-        setRepo("josefliox600", "egybest-cloudstream", "github")
-        description = "EgyBest CloudStream extension"
-        authors = listOf("Josef")
+        setRepo(System.getenv("GITHUB_REPOSITORY") ?: "josefliox600/lodynetjosef")
     }
 
     android {
-        compileSdkVersion(35)
-
+        namespace = "com.example"
         defaultConfig {
             minSdk = 21
-            targetSdkVersion(35)
+            compileSdkVersion(35)
+            targetSdk = 35
         }
 
         compileOptions {
-            sourceCompatibility = JavaVersion.VERSION_17
-            targetCompatibility = JavaVersion.VERSION_17
+            sourceCompatibility = JavaVersion.VERSION_1_8
+            targetCompatibility = JavaVersion.VERSION_1_8
         }
-    }
 
-    tasks.withType<KotlinCompile>().configureEach {
-        compilerOptions {
-            jvmTarget.set(JvmTarget.JVM_17)
-            freeCompilerArgs.addAll(
-                "-Xno-call-assertions",
-                "-Xno-param-assertions",
-                "-Xno-receiver-assertions"
-            )
+        tasks.withType<KotlinJvmCompile>().configureEach {
+            compilerOptions {
+                jvmTarget.set(JvmTarget.JVM_1_8)
+                freeCompilerArgs.addAll(
+                    "-Xno-call-assertions",
+                    "-Xno-param-assertions",
+                    "-Xno-receiver-assertions"
+                )
+            }
         }
     }
 
     dependencies {
-        val apk by configurations
+        val cloudstream by configurations
         val implementation by configurations
 
-        apk("com.lagradost:cloudstream3:pre-release")
+        cloudstream("com.lagradost:cloudstream3:pre-release")
         implementation(kotlin("stdlib"))
         implementation("com.github.Blatzar:NiceHttp:0.4.11")
         implementation("org.jsoup:jsoup:1.18.3")
         implementation("com.fasterxml.jackson.module:jackson-module-kotlin:2.13.1")
-        implementation("io.karn:khttp-android:0.1.2")
     }
 }
 
-task<Delete>("clean") {
-    delete(rootProject.buildDir)
+task("clean") {
+    delete(rootProject.layout.buildDirectory)
 }
