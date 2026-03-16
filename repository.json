@@ -1,0 +1,8 @@
+{
+  "name": "Josef Extensions",
+  "description": "CloudStream extensions by Josef",
+  "manifestVersion": 1,
+  "pluginLists": [
+    "https://raw.githubusercontent.com/josefliox600/egybest-cloudstream/builds/plugins.json"
+  ]
+}
