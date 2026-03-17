@@ -1,10 +1,7 @@
 import com.android.build.gradle.BaseExtension
 import com.lagradost.cloudstream3.gradle.CloudstreamExtension
-import org.gradle.api.Project
 import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 import org.jetbrains.kotlin.gradle.tasks.KotlinJvmCompile
-
-val forcedKotlinVersion = "2.3.20"
 
 buildscript {
     repositories {
@@ -15,14 +12,13 @@ buildscript {
     dependencies {
         classpath("com.android.tools.build:gradle:8.7.3")
         classpath("com.github.recloudstream:gradle:-SNAPSHOT")
-        classpath("org.jetbrains.kotlin:kotlin-gradle-plugin:$forcedKotlinVersion")
+        classpath("org.jetbrains.kotlin:kotlin-gradle-plugin:2.3.20")
     }
 
     configurations.classpath {
         resolutionStrategy.eachDependency {
             if (requested.group == "org.jetbrains.kotlin") {
-                useVersion(forcedKotlinVersion)
-                because("Force Kotlin version compatible with CloudStream dependency metadata")
+                useVersion("2.3.20")
             }
         }
     }
@@ -38,17 +34,17 @@ allprojects {
     configurations.all {
         resolutionStrategy.eachDependency {
             if (requested.group == "org.jetbrains.kotlin") {
-                useVersion(forcedKotlinVersion)
+                useVersion("2.3.20")
             }
         }
     }
 }
 
 fun Project.cloudstream(configuration: CloudstreamExtension.() -> Unit) =
-    extensions.getByName("cloudstream").let { it as CloudstreamExtension }.configuration()
+    (extensions.getByName("cloudstream") as CloudstreamExtension).configuration()
 
 fun Project.android(configuration: BaseExtension.() -> Unit) =
-    extensions.getByName("android").let { it as BaseExtension }.configuration()
+    (extensions.getByName("android") as BaseExtension).configuration()
 
 subprojects {
     apply(plugin = "com.android.library")
@@ -86,11 +82,9 @@ subprojects {
 
     dependencies {
         add("cloudstream", "com.lagradost:cloudstream3:pre-release")
-        add("implementation", kotlin("stdlib", forcedKotlinVersion))
-        add("implementation", "org.jetbrains.kotlin:kotlin-stdlib:$forcedKotlinVersion")
-        add("implementation", "org.jetbrains.kotlin:kotlin-stdlib-jdk8:$forcedKotlinVersion")
-        add("implementation", "org.jetbrains.kotlin:kotlin-reflect:$forcedKotlinVersion")
-
+        add("implementation", "org.jetbrains.kotlin:kotlin-stdlib:2.3.20")
+        add("implementation", "org.jetbrains.kotlin:kotlin-stdlib-jdk8:2.3.20")
+        add("implementation", "org.jetbrains.kotlin:kotlin-reflect:2.3.20")
         add("implementation", "com.github.Blatzar:NiceHttp:0.4.11")
         add("implementation", "org.jsoup:jsoup:1.18.3")
         add("implementation", "com.fasterxml.jackson.module:jackson-module-kotlin:2.13.1")
