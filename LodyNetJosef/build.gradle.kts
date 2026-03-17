@@ -1,22 +1,14 @@
 version = 1
 
-android {
-    namespace = "com.lodynetjosef"
+cloudstream {
+    language = "ar"
+    authors = listOf("Josef")
+    status = 1
+    tvTypes = listOf("Movie", "TvSeries", "AsianDrama", "Anime")
+    iconUrl = "https://www.google.com/s2/favicons?domain=lodynet.watch&sz=%size%"
+    description = "Arabic content from LodyNet"
 }
 
-cloudstream {
-    description = "Arabic content from LodyNet"
-    authors = listOf("Josef")
-
-    language = "ar"
-    status = 1
-
-    tvTypes = listOf(
-        "Movie",
-        "TvSeries",
-        "AsianDrama",
-        "Anime"
-    )
-
-    iconUrl = "https://www.google.com/s2/favicons?domain=lodynet.watch&sz=%size%"
+android {
+    namespace = "com.lodynetjosef"
 }
