@@ -306,7 +306,7 @@ class HDTodayZJosef : MainAPI() {
                 this.year = year
                 this.duration = duration
                 this.tags = genres
-                this.actors = actors.map { Actor(it) }
+                this.actors = actors.map { ActorData(Actor(it)) }
             }
         }
     }
