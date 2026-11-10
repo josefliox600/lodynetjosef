@@ -7,6 +7,7 @@ import com.lagradost.cloudstream3.MainPageRequest
 import com.lagradost.cloudstream3.SearchResponse
 import com.lagradost.cloudstream3.SubtitleFile
 import com.lagradost.cloudstream3.TvType
+import com.lagradost.cloudstream3.amap
 import com.lagradost.cloudstream3.app
 import com.lagradost.cloudstream3.mainPageOf
 import com.lagradost.cloudstream3.newEpisode
@@ -18,6 +19,8 @@ import com.lagradost.cloudstream3.utils.ExtractorLink
 import com.lagradost.cloudstream3.utils.loadExtractor
 import org.jsoup.nodes.Element
 import java.net.URLEncoder
+import java.util.concurrent.atomic.AtomicBoolean
+import kotlinx.coroutines.CancellationException
 
 class LodyNetJosef : MainAPI() {
     override var mainUrl = "https://lodynet.watch"
@@ -43,6 +46,26 @@ class LodyNetJosef : MainAPI() {
         "$mainUrl/category/%d8%a7%d9%86%d9%8a%d9%85%d9%8a/" to "أنيمي"
     )
 
+    // مثل runCatching لكن لا يبلع CancellationException
+    private inline fun <T> safe(block: () -> T): T? = try {
+        block()
+    } catch (e: CancellationException) {
+        throw e
+    } catch (e: Exception) {
+        null
+    }
+
+    // النوع يُحدد من القسم الذي جاء منه العنصر (أدق من تخمين العنوان)
+    private fun typeFromSection(sectionName: String): TvType? = when {
+        sectionName.contains("أنيمي") -> TvType.Anime
+        sectionName.contains("كورية") ||
+            sectionName.contains("صينية") ||
+            sectionName.contains("تايلندية") -> TvType.AsianDrama
+        sectionName.contains("مسلسلات") -> TvType.TvSeries
+        sectionName.contains("أفلام") -> TvType.Movie
+        else -> null
+    }
+
     private fun detectType(title: String, href: String): TvType {
         return when {
             href.contains("episode", true) || title.contains("الحلقة") -> TvType.TvSeries
@@ -52,9 +75,9 @@ class LodyNetJosef : MainAPI() {
         }
     }
 
-    private fun Element.toSearchResult(): SearchResponse? {
+    private fun Element.toSearchResult(forcedType: TvType? = null): SearchResponse? {
         val anchor = selectFirst("a[href]") ?: return null
-        val href = anchor.attr("href").trim().ifBlank { return null }
+        val href = fixUrl(anchor.attr("href").trim().ifBlank { return null })
 
         val title = selectFirst(".NewlyTitle, .SuggestionsTitle, h2, h3")
             ?.text()?.trim()
@@ -66,8 +89,9 @@ class LodyNetJosef : MainAPI() {
             ?.let { el -> el.attr("data-src").ifBlank { el.attr("src") } }
             ?.trim()
             ?.ifBlank { null }
+            ?.let { fixUrl(it) }
 
-        val type = detectType(title, href)
+        val type = forcedType ?: detectType(title, href)
 
         return newMovieSearchResponse(title, href, type) {
             this.posterUrl = poster
@@ -79,7 +103,7 @@ class LodyNetJosef : MainAPI() {
         val doc = app.get(pageUrl).document
 
         val items = doc.select(".ItemNewly, .SuggestionsItems, article, .post")
-            .mapNotNull { it.toSearchResult() }
+            .mapNotNull { it.toSearchResult(typeFromSection(request.name)) }
             .distinctBy { it.url }
 
         return newHomePageResponse(request.name, items)
@@ -97,15 +121,14 @@ class LodyNetJosef : MainAPI() {
     override suspend fun load(url: String): LoadResponse? {
         val resp = app.get(url)
         val doc = resp.document
-        val pageText = resp.text
 
         val title = doc.selectFirst("#PrimaryTitle")?.text()?.trim()
             ?: doc.selectFirst("title")?.text()?.substringBefore(" - ")?.trim()
             ?: return null
 
-        val poster = doc.selectFirst("#CoverSingle")?.attr("data-src")?.trim()?.ifBlank { null }
-            ?: Regex("""<meta\s+property=["']og:image["']\s+content=["']([^"']+)["']""")
-                .find(pageText)?.groupValues?.get(1)
+        val poster = (doc.selectFirst("#CoverSingle")?.attr("data-src")?.trim()?.ifBlank { null }
+            ?: doc.selectFirst("meta[property=og:image]")?.attr("content")?.trim()?.ifBlank { null }
+        )?.let { fixUrl(it) }
 
         val description = doc.selectFirst("#ContentDetails")?.text()?.trim()
             ?: doc.selectFirst("""meta[name="description"]""")?.attr("content")?.trim()
@@ -126,7 +149,7 @@ class LodyNetJosef : MainAPI() {
         val episodeButtons = doc.select("#ListEpisodes a, .EpisodesList a, .EpisodeItem a")
         if (episodeButtons.isNotEmpty()) {
             val episodes = episodeButtons.mapNotNull { ep ->
-                val epUrl = ep.attr("href").trim().ifBlank { return@mapNotNull null }
+                val epUrl = fixUrl(ep.attr("href").trim().ifBlank { return@mapNotNull null })
                 val epTitle = ep.text().trim().ifBlank { "حلقة" }
                 val epNum = Regex("""(\d+)""").find(epTitle)?.groupValues?.get(1)?.toIntOrNull()
 
@@ -136,7 +159,8 @@ class LodyNetJosef : MainAPI() {
                 }
             }
 
-            return newTvSeriesLoadResponse(title, url, TvType.TvSeries, episodes) {
+            val seriesType = detectType(title, url).let { if (it == TvType.Movie) TvType.TvSeries else it }
+            return newTvSeriesLoadResponse(title, url, seriesType, episodes) {
                 this.posterUrl = poster
                 this.plot = description
                 this.year = year
@@ -164,21 +188,27 @@ class LodyNetJosef : MainAPI() {
         val doc = responsePage.document
         val pageText = responsePage.text
 
-        var found = false
+        // نعتبر النجاح فقط إذا وصل رابط فعلي للمشغّل
+        val found = AtomicBoolean(false)
+        val trackingCallback: (ExtractorLink) -> Unit = {
+            found.set(true)
+            callback(it)
+        }
 
-        val firstEmbed = Regex("""["']embedUrl["']\s*:\s*["']([^"']+)["']""")
+        // لتجنب تكرار نفس السيرفر
+        val seen = java.util.Collections.synchronizedSet(mutableSetOf<String>())
+
+        suspend fun tryEmbed(url: String) {
+            if (!url.startsWith("http") || !seen.add(url)) return
+            safe { loadExtractor(url, data, subtitleCallback, trackingCallback) }
+        }
+
+        Regex("""["']embedUrl["']\s*:\s*["']([^"']+)["']""")
             .find(pageText)
             ?.groupValues?.get(1)
             ?.replace("\\/", "/")
             ?.trim()
-
-        if (!firstEmbed.isNullOrBlank() && firstEmbed.startsWith("http")) {
-            try {
-                loadExtractor(firstEmbed, data, subtitleCallback, callback)
-                found = true
-            } catch (_: Exception) {
-            }
-        }
+            ?.let { tryEmbed(it) }
 
         val postId = Regex("""PostData\s*=\s*\{[\s\S]*?ID:\s*(\d+)""")
             .find(pageText)
@@ -187,19 +217,27 @@ class LodyNetJosef : MainAPI() {
                 .find(pageText)
                 ?.groupValues?.get(1)
 
-        if (postId == null) return found
+        if (postId == null) return found.get()
 
-        val buttons = doc.select("#AllServerWatch button")
-        buttons.forEach { button ->
-            val onclick = button.attr("onclick")
-            val match = Regex("""SwitchServer\(this,\s*(\d+),\s*(\d+)\)""").find(onclick)
-                ?: return@forEach
+        // نحاول قراءة مسار الـ API من الصفحة نفسها، وإلا نستعمل المسار المعروف
+        val embedApi = Regex("""["']([^"']*RequestServerEmbed\.php)["']""")
+            .find(pageText)
+            ?.groupValues?.get(1)
+            ?.replace("\\/", "/")
+            ?.let { fixUrl(it) }
+            ?: "$mainUrl/wp-content/themes/Lodynet2020/Api/RequestServerEmbed.php"
 
-            val serverId = match.groupValues[1]
+        val serverIds = doc.select("#AllServerWatch button").mapNotNull { button ->
+            Regex("""SwitchServer\(this,\s*(\d+),\s*(\d+)\)""")
+                .find(button.attr("onclick"))
+                ?.groupValues?.get(1)
+        }.distinct()
 
-            try {
-                val embedResponse = app.post(
-                    "$mainUrl/wp-content/themes/Lodynet2020/Api/RequestServerEmbed.php",
+        // طلب السيرفرات بالتوازي بدل الانتظار واحداً تلو الآخر
+        serverIds.amap { serverId ->
+            val embed = safe {
+                app.post(
+                    embedApi,
                     headers = mapOf(
                         "Referer" to data,
                         "X-Requested-With" to "XMLHttpRequest"
@@ -209,18 +247,10 @@ class LodyNetJosef : MainAPI() {
                         "ServerID" to serverId
                     )
                 ).text.trim()
-
-                if (embedResponse.isNotBlank() && embedResponse.startsWith("http")) {
-                    try {
-                        loadExtractor(embedResponse, data, subtitleCallback, callback)
-                        found = true
-                    } catch (_: Exception) {
-                    }
-                }
-            } catch (_: Exception) {
             }
+            if (!embed.isNullOrBlank()) tryEmbed(embed)
         }
 
-        return found
+        return found.get()
     }
 }
