@@ -6,7 +6,7 @@ import org.jsoup.Jsoup
 import org.jsoup.nodes.Document
 import org.jsoup.nodes.Element
 import java.net.URLEncoder
-import kotlinx.coroutines.CancellationException
+import java.util.concurrent.CancellationException
 
 class HDTodayZJosef : MainAPI() {
     override var mainUrl = "https://hdtodayz.to"
