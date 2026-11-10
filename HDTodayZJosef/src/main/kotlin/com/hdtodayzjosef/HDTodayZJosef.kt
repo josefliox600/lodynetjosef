@@ -5,6 +5,8 @@ import com.lagradost.cloudstream3.utils.*
 import org.jsoup.Jsoup
 import org.jsoup.nodes.Document
 import org.jsoup.nodes.Element
+import java.net.URLEncoder
+import kotlinx.coroutines.CancellationException
 
 class HDTodayZJosef : MainAPI() {
     override var mainUrl = "https://hdtodayz.to"
@@ -28,6 +30,15 @@ class HDTodayZJosef : MainAPI() {
         "X-Requested-With" to "XMLHttpRequest",
         "Referer" to mainUrl
     )
+
+    // مثل runCatching لكن لا يبلع CancellationException
+    private inline fun <T> safe(block: () -> T): T? = try {
+        block()
+    } catch (e: CancellationException) {
+        throw e
+    } catch (e: Exception) {
+        null
+    }
 
     private fun Element.toSearchResultSafe(): SearchResponse? {
         val anchor = selectFirst("a.film-poster-ahref, .film-name a, h3.film-name a, a[href*=\"/movie/\"], a[href*=\"/tv/\"]")
@@ -79,14 +90,16 @@ class HDTodayZJosef : MainAPI() {
         val q = query.trim()
         if (q.isBlank()) return emptyList()
 
+        val slug = URLEncoder.encode(q.replace(Regex("\\s+"), "-"), "UTF-8")
+        val keyword = URLEncoder.encode(q, "UTF-8")
         val urls = listOf(
-            "$mainUrl/search/$q",
-            "$mainUrl/filter?keyword=$q"
+            "$mainUrl/search/$slug",
+            "$mainUrl/filter?keyword=$keyword"
         )
 
         val all = mutableListOf<SearchResponse>()
         urls.forEach { url ->
-            runCatching {
+            safe {
                 val doc = app.get(url, referer = mainUrl).document
                 all += doc.select(
                     ".film_list-wrap .flw-item, " +
@@ -135,9 +148,13 @@ class HDTodayZJosef : MainAPI() {
             ?: emptyList()
     }
 
+    // رابط التفاصيل مثل /tv/slug-12345 ، ورابط المشاهدة مثل slug-12345.67890
+    // نأخذ آخر جزء من المسار أولاً حتى لا نقطع الرابط عند نقطة النطاق
     private fun extractMediaId(url: String): Int? {
+        val last = url.substringBefore("?").trimEnd('/').substringAfterLast("/")
+        val beforeEpisodeId = last.substringBeforeLast(".", last)
         return Regex("""-(\d+)$""")
-            .find(url.substringBefore("?").substringBeforeLast("."))
+            .find(beforeEpisodeId)
             ?.groupValues
             ?.getOrNull(1)
             ?.toIntOrNull()
@@ -159,12 +176,8 @@ class HDTodayZJosef : MainAPI() {
 
         if (!direct.isNullOrBlank()) return fixUrl(direct)
 
-        val mediaId = extractMediaId(detailUrl) ?: return null
-        return if (isTv) {
-            "$mainUrl/watch-tv/${detailUrl.substringAfterLast("/tv/")}.$mediaId"
-        } else {
-            "$mainUrl/watch-movie/${detailUrl.substringAfterLast("/movie/")}.$mediaId"
-        }
+        // لا يمكن تخمين رابط المشاهدة بدون معرّف الحلقة، لذا نرجع null
+        return null
     }
 
     private suspend fun loadEpisodesFromAjax(mediaId: Int, refererUrl: String): List<Episode> {
@@ -244,8 +257,8 @@ class HDTodayZJosef : MainAPI() {
         val mediaId = extractMediaId(url)
 
         return if (isTv) {
-            val episodes = if (mediaId != null && watchPage != null) {
-                loadEpisodesFromAjax(mediaId, watchPage).ifEmpty {
+            val episodes = if (mediaId != null) {
+                loadEpisodesFromAjax(mediaId, watchPage ?: url).ifEmpty {
                     listOfNotNull(
                         watchPage?.let {
                             newEpisode("watch:$it") {
@@ -386,13 +399,13 @@ class HDTodayZJosef : MainAPI() {
 
         val iframeLink = extractIframeFromAjaxResponse(ajaxResponse)?.let(::fixUrl) ?: return false
 
-        val embedHtml = runCatching {
+        val embedHtml = safe {
             app.get(
                 iframeLink,
                 referer = data.removePrefix("watch:"),
                 headers = mapOf("Referer" to mainUrl)
             ).text
-        }.getOrNull()
+        }
 
         if (!embedHtml.isNullOrBlank()) {
             extractSubtitles(embedHtml).forEach(subtitleCallback)
@@ -404,11 +417,15 @@ class HDTodayZJosef : MainAPI() {
                         newExtractorLink(
                             source = name,
                             name = "$name ${index + 1}",
-                            url = videoUrl
+                            url = videoUrl,
+                            type = if (videoUrl.contains(".m3u8", true)) {
+                                ExtractorLinkType.M3U8
+                            } else {
+                                ExtractorLinkType.VIDEO
+                            }
                         ) {
                             referer = iframeLink
                             quality = Qualities.Unknown.value
-                            isM3u8 = videoUrl.contains(".m3u8", true)
                         }
                     )
                 }
