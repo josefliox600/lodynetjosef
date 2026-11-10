@@ -284,8 +284,8 @@ class HDTodayZJosef : MainAPI() {
                 this.plot = description
                 this.year = year
                 this.tags = genres
-                this.actors = actors.map { Actor(it) }
-            }
+                this.actors = actors.map { ActorData(Actor(it)) }
+            
         } else {
             val watchDoc = watchPage?.let { app.get(it, referer = url).document }
             val activeServerId = watchDoc
