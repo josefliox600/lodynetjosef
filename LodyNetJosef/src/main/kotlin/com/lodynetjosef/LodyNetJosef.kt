@@ -1,26 +1,11 @@
 package com.lodynetjosef
 
-import com.lagradost.cloudstream3.HomePageResponse
-import com.lagradost.cloudstream3.LoadResponse
-import com.lagradost.cloudstream3.MainAPI
-import com.lagradost.cloudstream3.MainPageRequest
-import com.lagradost.cloudstream3.SearchResponse
-import com.lagradost.cloudstream3.SubtitleFile
-import com.lagradost.cloudstream3.TvType
-import com.lagradost.cloudstream3.amap
-import com.lagradost.cloudstream3.app
-import com.lagradost.cloudstream3.mainPageOf
-import com.lagradost.cloudstream3.newEpisode
-import com.lagradost.cloudstream3.newHomePageResponse
-import com.lagradost.cloudstream3.newMovieLoadResponse
-import com.lagradost.cloudstream3.newMovieSearchResponse
-import com.lagradost.cloudstream3.newTvSeriesLoadResponse
-import com.lagradost.cloudstream3.utils.ExtractorLink
-import com.lagradost.cloudstream3.utils.loadExtractor
+import com.lagradost.cloudstream3.*
+import com.lagradost.cloudstream3.utils.*
 import org.jsoup.nodes.Element
 import java.net.URLEncoder
+import java.util.concurrent.CancellationException
 import java.util.concurrent.atomic.AtomicBoolean
-import kotlinx.coroutines.CancellationException
 
 class LodyNetJosef : MainAPI() {
     override var mainUrl = "https://lodynet.watch"
@@ -45,6 +30,13 @@ class LodyNetJosef : MainAPI() {
         "$mainUrl/category/%d8%a7%d9%81%d9%84%d8%a7%d9%85-%d8%a7%d8%b3%d9%8a%d9%88%d9%8a%d8%a9-a/" to "أفلام آسيوية",
         "$mainUrl/category/%d8%a7%d9%86%d9%8a%d9%85%d9%8a/" to "أنيمي"
     )
+
+    private fun absUrl(u: String): String = when {
+        u.startsWith("http") -> u
+        u.startsWith("//") -> "https:$u"
+        u.startsWith("/") -> mainUrl + u
+        else -> "$mainUrl/$u"
+    }
 
     // مثل runCatching لكن لا يبلع CancellationException
     private inline fun <T> safe(block: () -> T): T? = try {
@@ -77,7 +69,7 @@ class LodyNetJosef : MainAPI() {
 
     private fun Element.toSearchResult(forcedType: TvType? = null): SearchResponse? {
         val anchor = selectFirst("a[href]") ?: return null
-        val href = fixUrl(anchor.attr("href").trim().ifBlank { return null })
+        val href = absUrl(anchor.attr("href").trim().ifBlank { return null })
 
         val title = selectFirst(".NewlyTitle, .SuggestionsTitle, h2, h3")
             ?.text()?.trim()
@@ -89,7 +81,7 @@ class LodyNetJosef : MainAPI() {
             ?.let { el -> el.attr("data-src").ifBlank { el.attr("src") } }
             ?.trim()
             ?.ifBlank { null }
-            ?.let { fixUrl(it) }
+            ?.let { absUrl(it) }
 
         val type = forcedType ?: detectType(title, href)
 
@@ -128,7 +120,7 @@ class LodyNetJosef : MainAPI() {
 
         val poster = (doc.selectFirst("#CoverSingle")?.attr("data-src")?.trim()?.ifBlank { null }
             ?: doc.selectFirst("meta[property=og:image]")?.attr("content")?.trim()?.ifBlank { null }
-        )?.let { fixUrl(it) }
+        )?.let { absUrl(it) }
 
         val description = doc.selectFirst("#ContentDetails")?.text()?.trim()
             ?: doc.selectFirst("""meta[name="description"]""")?.attr("content")?.trim()
@@ -149,14 +141,17 @@ class LodyNetJosef : MainAPI() {
         val episodeButtons = doc.select("#ListEpisodes a, .EpisodesList a, .EpisodeItem a")
         if (episodeButtons.isNotEmpty()) {
             val episodes = episodeButtons.mapNotNull { ep ->
-                val epUrl = fixUrl(ep.attr("href").trim().ifBlank { return@mapNotNull null })
+                val epUrl = absUrl(ep.attr("href").trim().ifBlank { return@mapNotNull null })
                 val epTitle = ep.text().trim().ifBlank { "حلقة" }
                 val epNum = Regex("""(\d+)""").find(epTitle)?.groupValues?.get(1)?.toIntOrNull()
 
-                newEpisode(epUrl) {
-                    name = epTitle
-                    episode = epNum
-                }
+                newEpisode(
+                    epUrl,
+                    initializer = {
+                        this.name = epTitle
+                        this.episode = epNum
+                    }
+                )
             }
 
             val seriesType = detectType(title, url).let { if (it == TvType.Movie) TvType.TvSeries else it }
@@ -224,7 +219,7 @@ class LodyNetJosef : MainAPI() {
             .find(pageText)
             ?.groupValues?.get(1)
             ?.replace("\\/", "/")
-            ?.let { fixUrl(it) }
+            ?.let { absUrl(it) }
             ?: "$mainUrl/wp-content/themes/Lodynet2020/Api/RequestServerEmbed.php"
 
         val serverIds = doc.select("#AllServerWatch button").mapNotNull { button ->
